@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase';
 
 export default function Registrace() {
   const router = useRouter();
-  const [form, setForm] = useState({jmeno:'',prijmeni:'',prostredni:'',email:'',phone:'',birth:'',password:'',password2:''});
+  const [form, setForm] = useState({jmeno:'',prijmeni:'',prostredni:'',phone:'',email:'',birth:'',password:'',password2:''});
   const [error,setError]=useState(''); const [message,setMessage]=useState(''); const [loading,setLoading]=useState(false);
   const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
   const submit=async e=>{
@@ -18,10 +18,11 @@ export default function Registrace() {
     setLoading(true);
     try{
       const email=form.email.trim().toLowerCase();
-      const {data,error:authError}=await supabase.auth.signUp({email,password:form.password,options:{data:{jmeno:form.jmeno.trim(),prijmeni:form.prijmeni.trim(),prostredni_jmeno:form.prostredni.trim(),telefon:form.phone.trim(),datum_narozeni:form.birth}}});
+      const phone=form.phone.trim();
+      const {data,error:authError}=await supabase.auth.signUp({email,password:form.password,options:{data:{jmeno:form.jmeno.trim(),prijmeni:form.prijmeni.trim(),prostredni_jmeno:form.prostredni.trim(),telefon:phone,datum_narozeni:form.birth}}});
       if(authError)throw authError;
       if(!data.user)throw new Error('Účet se nepodařilo vytvořit.');
-      const {error:profileError}=await supabase.from('profiles').upsert({id:data.user.id,jmeno:form.jmeno.trim(),prijmeni:form.prijmeni.trim(),prostredni_jmeno:form.prostredni.trim()||null,telefon:form.phone.trim(),datum_narozeni:form.birth,email});
+      const {error:profileError}=await supabase.from('profiles').upsert({id:data.user.id,jmeno:form.jmeno.trim(),prijmeni:form.prijmeni.trim(),prostredni_jmeno:form.prostredni.trim()||null,telefon:phone||null,datum_narozeni:form.birth,email});
       if(profileError)throw profileError;
       if(data.session)router.replace('/');else{setMessage('Účet byl vytvořen. Zkontroluj e-mail a potvrď registraci, poté se přihlas.');setTimeout(()=>router.replace('/prihlaseni'),2500);}
     }catch(err){const msg=String(err?.message||'');setError(msg.includes('already registered')?'Tento e-mail už je registrovaný.':msg.includes('profiles')?'Účet vznikl, ale profil se nepodařilo uložit. Zkontroluj databázi Supabase.':'Registrace se nepodařila. Zkus to prosím znovu.');}finally{setLoading(false);}
@@ -32,8 +33,8 @@ export default function Registrace() {
     <form onSubmit={submit}>
       <div className="twoAuth"><label>Jméno<input value={form.jmeno} onChange={e=>upd('jmeno',e.target.value)} required/></label><label>Příjmení<input value={form.prijmeni} onChange={e=>upd('prijmeni',e.target.value)} required/></label></div>
       <label>Prostřední jméno <span className="optional">volitelné</span><input value={form.prostredni} onChange={e=>upd('prostredni',e.target.value)}/></label>
+      <label>Telefonní číslo <span className="optional">volitelné</span><input type="tel" value={form.phone} onChange={e=>upd('phone',e.target.value)} placeholder="+420 123 456 789" autoComplete="tel"/></label>
       <label>E-mail<input type="email" value={form.email} onChange={e=>upd('email',e.target.value)} autoComplete="email" required/></label>
-      <label>Telefonní číslo<input type="tel" value={form.phone} onChange={e=>upd('phone',e.target.value)} placeholder="+420 123 456 789" autoComplete="tel" required/></label>
       <label>Datum narození<input type="date" value={form.birth} onChange={e=>upd('birth',e.target.value)} required/></label>
       <label>Heslo<input type="password" value={form.password} onChange={e=>upd('password',e.target.value)} placeholder="Minimálně 8 znaků" autoComplete="new-password" required/></label>
       <label>Potvrzení hesla<input type="password" value={form.password2} onChange={e=>upd('password2',e.target.value)} autoComplete="new-password" required/></label>
