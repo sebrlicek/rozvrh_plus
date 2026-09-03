@@ -2,16 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@supabase/supabase-js';
-
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-  });
-}
+import { supabase } from '../../lib/supabase';
 
 export default function Prihlaseni() {
   const router = useRouter();
@@ -26,7 +17,6 @@ export default function Prihlaseni() {
     setLoading(true);
 
     try {
-      const supabase = getSupabase();
       if (!supabase) {
         throw new Error('Přihlášení není nakonfigurované. Zkontroluj NEXT_PUBLIC_SUPABASE_URL a NEXT_PUBLIC_SUPABASE_ANON_KEY ve Vercelu.');
       }
@@ -37,11 +27,19 @@ export default function Prihlaseni() {
       });
 
       if (authError) throw authError;
-      router.push('/');
+
+      router.replace('/');
+      router.refresh();
     } catch (err) {
       const message = String(err?.message || 'Přihlášení se nepodařilo.');
-      if (message.toLowerCase().includes('invalid login credentials')) {
+      const normalized = message.toLowerCase();
+
+      if (normalized.includes('invalid login credentials')) {
         setError('Nesprávný e-mail nebo heslo.');
+      } else if (normalized.includes('email not confirmed')) {
+        setError('Nejdřív potvrď svůj e-mail pomocí odkazu, který ti přišel e-mailem.');
+      } else if (normalized.includes('fetch') || normalized.includes('network')) {
+        setError('Nepodařilo se spojit se serverem. Zkontroluj připojení a nastavení Supabase.');
       } else {
         setError(message);
       }
