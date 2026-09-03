@@ -4,6 +4,28 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabase';
 
+const ACCOUNT_REST_KEY = 'rozvrh-plus-account-rest-until';
+
+function getRestMessage() {
+  try {
+    const until = Number(localStorage.getItem(ACCOUNT_REST_KEY) || 0);
+    if (!until) return '';
+    if (until <= Date.now()) {
+      localStorage.removeItem(ACCOUNT_REST_KEY);
+      return '';
+    }
+    const remaining = until - Date.now();
+    const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
+    const hours = Math.ceil((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+    const when = new Date(until).toLocaleString('cs-CZ', { dateStyle: 'medium', timeStyle: 'short' });
+    return days > 0
+      ? `Účet je v odpočinku ještě ${days} ${days === 1 ? 'den' : days < 5 ? 'dny' : 'dní'}. Přihlásit se můžeš znovu ${when}.`
+      : `Účet je v odpočinku ještě ${hours} ${hours === 1 ? 'hodinu' : hours < 5 ? 'hodiny' : 'hodin'}. Přihlásit se můžeš znovu ${when}.`;
+  } catch {
+    return '';
+  }
+}
+
 export default function Prihlaseni() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -14,6 +36,11 @@ export default function Prihlaseni() {
   async function submit(e) {
     e.preventDefault();
     setError('');
+    const restMessage = getRestMessage();
+    if (restMessage) {
+      setError(restMessage);
+      return;
+    }
     setLoading(true);
 
     try {
