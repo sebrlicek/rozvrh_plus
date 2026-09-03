@@ -1,0 +1,64 @@
+name: Build Rozvrh+ iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'capacitor.config.ts'
+      - 'package.json'
+      - '.github/workflows/ios-ipa.yml'
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Create iOS project
+        run: npx cap add ios
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Build unsigned iOS app
+        working-directory: ios/App
+        run: |
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/derived" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R "$RUNNER_TEMP/derived/Build/Products/Release-iphoneos/App.app" Payload/App.app
+          /usr/bin/zip -qry RozvrhPlus-unsigned.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: RozvrhPlus-unsigned-ipa
+          path: RozvrhPlus-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Upload iOS project
+        uses: actions/upload-artifact@v4
+        with:
+          name: RozvrhPlus-ios-project
+          path: ios/
+          if-no-files-found: error
