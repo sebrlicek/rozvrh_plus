@@ -1,0 +1,50 @@
+{
+  "id": "/",
+  "name": "Rozvrh+",
+  "short_name": "Rozvrh+",
+  "description": "Český školní organizér pro rozvrh, úkoly, zkoušky, kalendář, materiály a poznámky.",
+  "lang": "cs",
+  "dir": "ltr",
+  "start_url": "/#domu",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#f4f5f9",
+  "theme_color": "#6757e8",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Můj rozvrh",
+      "short_name": "Rozvrh",
+      "url": "/#rozvrh",
+      "icons": [{"src": "/icons/icon-192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Moje úkoly",
+      "short_name": "Úkoly",
+      "url": "/#ukoly",
+      "icons": [{"src": "/icons/icon-192.png", "sizes": "192x192"}]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Rozvrh+">
+  <defs>
+    <linearGradient id="g" x1="58" y1="38" x2="454" y2="482" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#806fff"/>
+      <stop offset="1" stop-color="#4938c7"/>
+    </linearGradient>
+    <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="20" flood-color="#2b2180" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#g)"/>
+  <circle cx="402" cy="93" r="108" fill="#fff" opacity=".08"/>
+  <circle cx="87" cy="460" r="132" fill="#fff" opacity=".06"/>
+  <rect x="91" y="89" width="330" height="334" rx="86" fill="#fff" filter="url(#s)"/>
+  <path d="M175 344V167h82c61 0 98 28 98 79 0 34-18 58-48 69l48 29h-72l-41-23h-4v23h-63Zm63-76h19c23 0 35-8 35-24s-12-23-35-23h-19v47Z" fill="#292347"/>
+  <path d="M340 140v64M308 172h64" stroke="#6757e8" stroke-width="22" stroke-linecap="round"/>
+</svg>
