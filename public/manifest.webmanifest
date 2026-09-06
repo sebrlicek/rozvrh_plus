@@ -1,0 +1,21 @@
+{
+  "name": "Rozvrh+",
+  "short_name": "Rozvrh+",
+  "description": "Moderní školní organizér pro rozvrh, úkoly, kalendář a materiály.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f7fb",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "lang": "cs",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
