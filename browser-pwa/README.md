@@ -5,6 +5,8 @@ Moderní česká školní PWA pro rozvrh, úkoly, zkoušky, kalendář, materiá
 ## Co aplikace umí
 
 - upravovat týdenní rozvrh,
+- nastavit vlastní časová rozmezí vyučování a vybírat je u jednotlivých hodin,
+- nastavit vlastní profilovou fotku uloženou v zařízení,
 - spravovat úkoly a zkoušky,
 - zobrazit měsíční kalendář a exportovat jej do Apple/Google Kalendáře,
 - ukládat soubory přímo v zařízení,

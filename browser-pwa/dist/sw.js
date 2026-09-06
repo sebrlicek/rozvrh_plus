@@ -1,4 +1,4 @@
-const CACHE = 'rozvrh-plus-v2.1.0';
+const CACHE = 'rozvrh-plus-v2.3.0';
 const APP_SHELL = [
   '/',
   '/index.html',

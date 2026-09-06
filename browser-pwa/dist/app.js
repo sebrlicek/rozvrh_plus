@@ -12,6 +12,14 @@
   var DAYS = ['Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek'];
   var DAY_SHORT = ['Po', 'Út', 'St', 'Čt', 'Pá'];
   var COLORS = ['#6757e8', '#2878e6', '#0795a6', '#1b9a67', '#e19b22', '#e36b32', '#df466d', '#8d4bd4'];
+  var DEFAULT_TIME_SLOTS = [
+    { start: '08:00', end: '08:45' },
+    { start: '08:55', end: '09:40' },
+    { start: '10:00', end: '10:45' },
+    { start: '10:55', end: '11:40' },
+    { start: '11:50', end: '12:35' },
+    { start: '12:45', end: '13:30' }
+  ];
 
   var icons = {
     home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></svg>',
@@ -65,7 +73,7 @@
   function defaults() {
     return {
       version: 2,
-      settings: { name: 'Student', theme: 'system', accent: '#6757e8' },
+      settings: { name: 'Student', avatar: '', theme: 'system', accent: '#6757e8', timeSlots: DEFAULT_TIME_SLOTS.map(function (slot) { return Object.assign({}, slot); }) },
       lessons: [
         { id: id(), day: 0, start: '08:00', end: '08:45', name: 'Matematika', room: '214', teacher: 'Nováková', color: '#2878e6', notes: '' },
         { id: id(), day: 0, start: '08:55', end: '09:40', name: 'Český jazyk', room: '112', teacher: 'Svobodová', color: '#df466d', notes: '' },
@@ -469,6 +477,14 @@
       .replace(/'/g, '&#039;');
   }
 
+  function avatarHtml(name) {
+    var avatar = String(state.settings.avatar || '');
+    if (/^data:image\/(?:png|jpeg|webp);base64,/i.test(avatar)) {
+      return '<img src="' + escapeHtml(avatar) + '" alt="">';
+    }
+    return escapeHtml(((name || 'Student').trim().charAt(0) || 'S').toUpperCase());
+  }
+
   function asDate(iso) {
     return new Date(String(iso) + 'T12:00:00');
   }
@@ -562,10 +578,9 @@
     document.getElementById('page-title').textContent = info.label;
     document.getElementById('page-kicker').textContent = info.kicker;
     var name = (state.settings.name || 'Student').trim();
-    var initial = (name.charAt(0) || 'S').toUpperCase();
     document.getElementById('side-name').textContent = name || 'Student';
-    document.getElementById('side-avatar').textContent = initial;
-    document.getElementById('top-avatar').textContent = initial;
+    document.getElementById('side-avatar').innerHTML = avatarHtml(name);
+    document.getElementById('top-avatar').innerHTML = avatarHtml(name);
     document.title = info.label + ' · Rozvrh+';
   }
 
@@ -941,17 +956,34 @@
       return '<button class="color-option ' + (state.settings.accent.toLowerCase() === color.toLowerCase() ? 'active' : '') + '" style="--swatch:' + color + '" data-action="set-accent" data-color="' + color + '" aria-label="Nastavit barvu ' + color + '"></button>';
     }).join('');
     var installText = installed ? 'Aplikace běží z plochy v samostatném okně.' : isIOS() ? 'Na iPhonu ji přidáš přes nabídku Sdílet.' : 'Přidej si ji do zařízení pro rychlejší spuštění.';
+    var timeSlots = Array.isArray(state.settings.timeSlots) ? state.settings.timeSlots : DEFAULT_TIME_SLOTS;
+    var timeSlotRows = timeSlots.map(function (slot, index) {
+      return '<div class="time-slot-row"><span class="time-slot-number">' + (index + 1) + '.</span>' +
+        '<label><span>Od</span><input name="slot-start-' + index + '" type="time" value="' + escapeHtml(slot.start) + '" required></label>' +
+        '<span class="time-slot-dash">–</span>' +
+        '<label><span>Do</span><input name="slot-end-' + index + '" type="time" value="' + escapeHtml(slot.end) + '" required></label>' +
+        '<button class="row-action danger" type="button" data-action="remove-time-slot" data-index="' + index + '" aria-label="Odstranit čas ' + escapeHtml(slot.start + ' až ' + slot.end) + '">' + icons.trash + '</button></div>';
+    }).join('');
+    var profilePicture = avatarHtml(accountName);
 
     main.innerHTML = '<section class="view">' +
       toolbar('Nastavení', 'Přizpůsob si Rozvrh+ podle sebe.', '') +
       '<div class="settings-layout">' +
         '<article class="settings-card"><h2>Účet</h2><p>Přihlášení a heslo bezpečně spravuje Supabase.</p>' +
-          '<div class="account-row"><span class="avatar">' + escapeHtml(accountName.charAt(0).toUpperCase()) + '</span><div><strong>' + escapeHtml(accountName) + '</strong><small>' + escapeHtml(accountEmail) + '</small></div></div>' +
+          '<div class="account-row"><span class="avatar">' + profilePicture + '</span><div><strong>' + escapeHtml(accountName) + '</strong><small>' + escapeHtml(accountEmail) + '</small></div></div>' +
           '<button class="secondary-button button-small button-full" data-action="logout">Odhlásit se</button></article>' +
-        '<article class="settings-card"><h2>Profil</h2><p>Jméno se zobrazuje jen v tomto zařízení.</p>' +
+        '<article class="settings-card"><h2>Profil</h2><p>Jméno a profilovka se zobrazují jen v tomto zařízení.</p>' +
+          '<div class="profile-photo-editor"><span class="profile-photo-preview">' + profilePicture + '</span><div><strong>Profilová fotka</strong><small>Čtvercový výřez vytvoříme automaticky.</small></div></div>' +
+          '<div class="profile-photo-actions"><input id="profile-picture-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>' +
+          '<button class="secondary-button button-small" type="button" data-action="choose-profile-picture">' + icons.upload + (state.settings.avatar ? 'Změnit fotku' : 'Nahrát fotku') + '</button>' +
+          (state.settings.avatar ? '<button class="danger-button button-small" type="button" data-action="remove-profile-picture">Odstranit</button>' : '') + '</div>' +
           '<form id="profile-form"><label class="field">Tvoje jméno<input name="name" maxlength="40" value="' + escapeHtml(state.settings.name) + '" placeholder="Např. Péťo"></label><button class="primary-button button-small" type="submit">Uložit jméno</button></form></article>' +
         '<article class="settings-card"><h2>Vzhled</h2><p>Změň režim a hlavní barvu aplikace.</p>' +
           '<div class="theme-segment">' + themeButtons + '</div><div class="color-options">' + colorButtons + '</div></article>' +
+        '<article class="settings-card full"><h2>Časy vyučování</h2><p>Z těchto rozmezí pak vybíráš při přidávání nebo úpravě hodiny.</p>' +
+          '<form id="time-slots-form"><div class="time-slots-list">' + timeSlotRows + '</div><div class="settings-actions time-slot-actions">' +
+          '<button class="secondary-button button-small" type="button" data-action="add-time-slot">' + icons.plus + 'Přidat další čas</button>' +
+          '<button class="primary-button button-small" type="submit">Uložit časy</button></div></form></article>' +
         '<article class="settings-card"><h2>Instalace aplikace</h2><p>Rozvrh+ pak vypadá a funguje jako běžná aplikace.</p>' +
           '<div class="install-status"><i class="status-dot ' + (installed ? 'on' : '') + '"></i><div><strong>' + (installed ? 'Přidáno na plochu' : 'Zatím otevřeno v prohlížeči') + '</strong><small>' + escapeHtml(installText) + '</small></div></div>' +
           '<button class="primary-button button-small button-full" data-action="show-install">' + icons.install + (installed ? 'Aplikace je nainstalovaná' : 'Jak přidat na plochu') + '</button></article>' +
@@ -990,13 +1022,20 @@
   }
 
   function openLessonForm(existing) {
-    var lesson = existing || { day: ui.scheduleDay, start: '08:00', end: '08:45', name: '', teacher: '', room: '', color: state.settings.accent, notes: '' };
+    var timeSlots = Array.isArray(state.settings.timeSlots) && state.settings.timeSlots.length ? state.settings.timeSlots : DEFAULT_TIME_SLOTS;
+    var firstSlot = timeSlots[0];
+    var lesson = existing || { day: ui.scheduleDay, start: firstSlot.start, end: firstSlot.end, name: '', teacher: '', room: '', color: state.settings.accent, notes: '' };
     var days = DAYS.map(function (day, index) { return option(String(index), day, String(lesson.day)); }).join('');
+    var selectedTime = lesson.start + '|' + lesson.end;
+    var hasSelectedTime = timeSlots.some(function (slot) { return slot.start === lesson.start && slot.end === lesson.end; });
+    var timeOptions = timeSlots.map(function (slot, index) {
+      return option(slot.start + '|' + slot.end, (index + 1) + '. hodina · ' + slot.start + '–' + slot.end, selectedTime);
+    }).join('');
+    if (!hasSelectedTime) timeOptions += option(selectedTime, 'Původní čas · ' + lesson.start + '–' + lesson.end, selectedTime);
     var body = '<form data-editor="lesson" data-id="' + (lesson.id || '') + '">' +
       '<label class="field">Den<select name="day" required>' + days + '</select></label>' +
       '<label class="field">Název předmětu<input name="name" maxlength="60" value="' + escapeHtml(lesson.name) + '" placeholder="Např. Matematika" required></label>' +
-      '<div class="field-row"><label class="field">Začátek<input name="start" type="time" value="' + escapeHtml(lesson.start) + '" required></label>' +
-      '<label class="field">Konec<input name="end" type="time" value="' + escapeHtml(lesson.end) + '" required></label></div>' +
+      '<label class="field">Čas hodiny<select name="time_slot" required>' + timeOptions + '</select></label>' +
       '<div class="field-row"><label class="field">Učitel<input name="teacher" maxlength="60" value="' + escapeHtml(lesson.teacher || '') + '" placeholder="Volitelné"></label>' +
       '<label class="field">Učebna<input name="room" maxlength="30" value="' + escapeHtml(lesson.room || '') + '" placeholder="Volitelné"></label></div>' +
       '<label class="field">Barva předmětu<input name="color" type="color" value="' + escapeHtml(lesson.color || state.settings.accent) + '"></label>' +
@@ -1060,11 +1099,12 @@
     var kind = form.dataset.editor;
     var itemId = form.dataset.id;
     if (kind === 'lesson') {
+      var selectedSlot = String(data.get('time_slot') || '').split('|');
       var lesson = {
         id: itemId || id(),
         day: Number(data.get('day')),
-        start: String(data.get('start')),
-        end: String(data.get('end')),
+        start: selectedSlot[0] || '',
+        end: selectedSlot[1] || '',
         name: String(data.get('name')).trim(),
         teacher: String(data.get('teacher')).trim(),
         room: String(data.get('room')).trim(),
@@ -1185,6 +1225,106 @@
     closeModal();
     go('domu');
     toast('Data byla smazána z tohoto zařízení.');
+  }
+
+  function readTimeSlotsForm() {
+    var form = document.getElementById('time-slots-form');
+    if (!form) return null;
+    var rows = Array.from(form.querySelectorAll('.time-slot-row'));
+    var slots = rows.map(function (row) {
+      return { start: row.querySelector('input[name^="slot-start-"]').value, end: row.querySelector('input[name^="slot-end-"]').value };
+    });
+    var invalid = slots.some(function (slot) { return !slot.start || !slot.end || timeMinutes(slot.end) <= timeMinutes(slot.start); });
+    if (invalid) {
+      toast('Každý konec musí být později než začátek.', 'error');
+      return null;
+    }
+    var seen = {};
+    var duplicate = slots.some(function (slot) {
+      var key = slot.start + '|' + slot.end;
+      if (seen[key]) return true;
+      seen[key] = true;
+      return false;
+    });
+    if (duplicate) {
+      toast('Stejné časové rozmezí je v seznamu vícekrát.', 'error');
+      return null;
+    }
+    return slots;
+  }
+
+  function saveTimeSlots(showMessage) {
+    var slots = readTimeSlotsForm();
+    if (!slots || !slots.length) return false;
+    slots.sort(function (a, b) { return timeMinutes(a.start) - timeMinutes(b.start); });
+    state.settings.timeSlots = slots;
+    saveState();
+    if (showMessage) toast('Časy vyučování byly uložené.');
+    return true;
+  }
+
+  function addTimeSlot() {
+    var slots = readTimeSlotsForm();
+    if (slots === null) return;
+    var last = slots[slots.length - 1];
+    var nextStartMinutes = last ? timeMinutes(last.end) + 10 : 480;
+    var nextEndMinutes = nextStartMinutes + 45;
+    function formatMinutes(value) {
+      value = Math.min(value, 1439);
+      return String(Math.floor(value / 60)).padStart(2, '0') + ':' + String(value % 60).padStart(2, '0');
+    }
+    slots.push({ start: formatMinutes(nextStartMinutes), end: formatMinutes(nextEndMinutes) });
+    state.settings.timeSlots = slots;
+    saveState();
+    renderSettings();
+  }
+
+  function removeTimeSlot(index) {
+    var slots = readTimeSlotsForm();
+    if (slots === null) return;
+    if (slots.length <= 1) {
+      toast('V rozvrhu musí zůstat alespoň jedno časové rozmezí.', 'error');
+      return;
+    }
+    slots.splice(index, 1);
+    state.settings.timeSlots = slots;
+    saveState();
+    renderSettings();
+  }
+
+  function setProfilePicture(file) {
+    if (!file || !/^image\/(png|jpeg|webp)$/i.test(file.type)) {
+      toast('Vyber obrázek ve formátu JPG, PNG nebo WebP.', 'error');
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      toast('Obrázek je příliš velký. Maximum je 12 MB.', 'error');
+      return;
+    }
+    var reader = new FileReader();
+    reader.onerror = function () { toast('Obrázek se nepodařilo načíst.', 'error'); };
+    reader.onload = function () {
+      var image = new Image();
+      image.onerror = function () { toast('Obrázek se nepodařilo zpracovat.', 'error'); };
+      image.onload = function () {
+        var size = Math.min(image.naturalWidth, image.naturalHeight);
+        var sourceX = Math.max(0, (image.naturalWidth - size) / 2);
+        var sourceY = Math.max(0, (image.naturalHeight - size) / 2);
+        var canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        var context = canvas.getContext('2d');
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, 256, 256);
+        context.drawImage(image, sourceX, sourceY, size, size, 0, 0, 256, 256);
+        state.settings.avatar = canvas.toDataURL('image/jpeg', .84);
+        saveState();
+        render();
+        toast('Profilová fotka byla uložená.');
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
   }
 
   function openDatabase() {
@@ -1399,6 +1539,15 @@
     else if (action === 'download-material') await downloadMaterial(button.dataset.id);
     else if (action === 'set-theme') { state.settings.theme = button.dataset.theme; saveState(); renderSettings(); applyAppearance(); }
     else if (action === 'set-accent') { state.settings.accent = button.dataset.color; saveState(); render(); }
+    else if (action === 'add-time-slot') addTimeSlot();
+    else if (action === 'remove-time-slot') removeTimeSlot(Number(button.dataset.index));
+    else if (action === 'choose-profile-picture') document.getElementById('profile-picture-input').click();
+    else if (action === 'remove-profile-picture') {
+      state.settings.avatar = '';
+      saveState();
+      render();
+      toast('Profilová fotka byla odstraněná.');
+    }
     else if (action === 'export-data') exportData();
     else if (action === 'import-data') document.getElementById('import-input').click();
     else if (action === 'export-calendar') exportCalendar();
@@ -1423,6 +1572,9 @@
       saveState();
       render();
       toast('Jméno bylo uložené.');
+    } else if (event.target.id === 'time-slots-form') {
+      event.preventDefault();
+      if (saveTimeSlots(true)) renderSettings();
     }
   });
 
@@ -1442,6 +1594,13 @@
       replacement.focus();
       replacement.setSelectionRange(position, position);
     }
+  });
+
+  document.addEventListener('change', function (event) {
+    if (event.target.id !== 'profile-picture-input') return;
+    var file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (file) setProfilePicture(file);
   });
 
   document.getElementById('material-input').addEventListener('change', function (event) {
