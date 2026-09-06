@@ -1,8 +1,13 @@
 (function () {
   'use strict';
 
-  var STORE_KEY = 'rozvrh-plus-v2';
+  var BASE_STORE_KEY = 'rozvrh-plus-v2';
+  var STORE_KEY = BASE_STORE_KEY;
   var OLD_STORE_KEY = 'rozvrh-plus';
+  var DATA_MIGRATION_KEY = 'rozvrh-plus-data-owner';
+  var AUTH_SESSION_KEY = 'rozvrh-plus-auth-session';
+  var SUPABASE_URL = 'https://ibkkvlcylmfqujigttit.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_2bv1MUgHRPOa6ErJxjpvcQ_HjugvWUN';
   var INSTALL_DISMISS_KEY = 'rozvrh-plus-install-dismissed';
   var DAYS = ['Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek'];
   var DAY_SHORT = ['Po', 'Út', 'St', 'Čt', 'Pá'];
@@ -102,10 +107,310 @@
     installPrompt: null
   };
 
+  var currentUser = null;
+  var authSession = null;
   var state = loadState();
   var main = document.getElementById('main-content');
   var modalRoot = document.getElementById('modal-root');
   var toastRoot = document.getElementById('toast-root');
+  var authRoot = document.getElementById('auth-root');
+  var appRoot = document.getElementById('app');
+
+  async function authRequest(path, options) {
+    options = options || {};
+    var headers = Object.assign({
+      apikey: SUPABASE_KEY,
+      'Content-Type': 'application/json'
+    }, options.headers || {});
+    if (options.accessToken) headers.Authorization = 'Bearer ' + options.accessToken;
+    var response;
+    try {
+      response = await fetch(SUPABASE_URL + path, {
+        method: options.method || 'GET',
+        headers: headers,
+        body: options.body ? JSON.stringify(options.body) : undefined
+      });
+    } catch (error) {
+      throw new Error('network_error');
+    }
+    var text = await response.text();
+    var data = {};
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch (error) { data = { message: text }; }
+    }
+    if (!response.ok) {
+      var message = data.msg || data.message || data.error_description || data.error || ('HTTP ' + response.status);
+      var authError = new Error(message);
+      authError.status = response.status;
+      authError.code = data.error_code || data.code || '';
+      throw authError;
+    }
+    return data;
+  }
+
+  function authErrorMessage(error) {
+    var message = String(error && error.message || '').toLowerCase();
+    var code = String(error && error.code || '').toLowerCase();
+    if (message === 'network_error') return 'Nepodařilo se spojit se serverem. Zkontroluj internetové připojení.';
+    if (message.indexOf('invalid login credentials') >= 0) return 'Nesprávný e-mail nebo heslo.';
+    if (message.indexOf('email not confirmed') >= 0) return 'Nejdřív potvrď e-mail od Supabase.';
+    if (message.indexOf('already registered') >= 0 || code.indexOf('user_already_exists') >= 0) return 'Tento e-mail už je zaregistrovaný.';
+    if (message.indexOf('password') >= 0 && message.indexOf('weak') >= 0) return 'Heslo je příliš slabé. Použij alespoň 8 znaků.';
+    if (message.indexOf('rate limit') >= 0 || code.indexOf('over_email_send_rate_limit') >= 0) return 'Bylo odesláno příliš mnoho e-mailů. Počkej chvíli a zkus to znovu.';
+    if (message.indexOf('email address') >= 0 || message.indexOf('invalid email') >= 0) return 'Zadej platnou e-mailovou adresu.';
+    if (error && error.status === 429) return 'Příliš mnoho pokusů. Počkej chvíli a zkus to znovu.';
+    return 'Akce se nepodařila. ' + (error && error.message ? error.message : 'Zkus to prosím znovu.');
+  }
+
+  function normalizeSession(data, previous) {
+    previous = previous || {};
+    return {
+      access_token: data.access_token || previous.access_token || '',
+      refresh_token: data.refresh_token || previous.refresh_token || '',
+      expires_at: data.expires_at || (data.expires_in ? Math.floor(Date.now() / 1000) + Number(data.expires_in) : previous.expires_at || 0),
+      token_type: data.token_type || previous.token_type || 'bearer',
+      user: data.user || previous.user || null
+    };
+  }
+
+  function saveAuthSession(session) {
+    authSession = session;
+    if (session) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+    else localStorage.removeItem(AUTH_SESSION_KEY);
+  }
+
+  function loadAuthSession() {
+    try { return JSON.parse(localStorage.getItem(AUTH_SESSION_KEY)); }
+    catch (error) { return null; }
+  }
+
+  function consumeAuthCallback() {
+    if (!location.hash || location.hash.indexOf('access_token=') < 0) return null;
+    var params = new URLSearchParams(location.hash.slice(1));
+    var accessToken = params.get('access_token');
+    if (!accessToken) return null;
+    var session = normalizeSession({
+      access_token: accessToken,
+      refresh_token: params.get('refresh_token') || '',
+      expires_in: Number(params.get('expires_in') || 3600),
+      token_type: params.get('token_type') || 'bearer'
+    });
+    saveAuthSession(session);
+    var type = params.get('type') || '';
+    history.replaceState(null, '', location.pathname + location.search + '#domu');
+    return type;
+  }
+
+  async function refreshAuthSession(session) {
+    if (!session || !session.refresh_token) throw new Error('missing_refresh_token');
+    var data = await authRequest('/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      body: { refresh_token: session.refresh_token }
+    });
+    var refreshed = normalizeSession(data, session);
+    saveAuthSession(refreshed);
+    return refreshed;
+  }
+
+  async function fetchAuthUser(session) {
+    if (!session || !session.access_token) throw new Error('missing_access_token');
+    var user = await authRequest('/auth/v1/user', { accessToken: session.access_token });
+    session.user = user;
+    saveAuthSession(session);
+    return user;
+  }
+
+  function authAside() {
+    return '<aside class="auth-aside">' +
+      '<div class="auth-logo"><span class="brand-mark">R<span>+</span></span><strong>Rozvrh<span>+</span></strong></div>' +
+      '<div class="auth-promise"><small>TVŮJ ŠKOLNÍ ORGANIZÉR</small><h1>Měj školu pod kontrolou.</h1><p>Rozvrh, úkoly, zkoušky a poznámky na jednom místě.</p></div>' +
+      '<div class="auth-points"><span><i>✓</i> Funguje jako aplikace na iPhonu</span><span><i>✓</i> Data jednotlivých účtů jsou oddělená</span><span><i>✓</i> Heslo spravuje zabezpečené přihlášení</span></div>' +
+    '</aside>';
+  }
+
+  function passwordField(name, label, autocomplete, placeholder) {
+    return '<label class="field password-field">' + label +
+      '<input name="' + name + '" type="password" minlength="8" autocomplete="' + autocomplete + '" placeholder="' + placeholder + '" required>' +
+      '<button class="password-toggle" type="button" data-action="toggle-password">Ukázat</button></label>';
+  }
+
+  function authMessageHtml(message, success) {
+    return message ? '<div class="auth-message ' + (success ? 'success' : '') + '" role="status">' + escapeHtml(message) + '</div>' : '';
+  }
+
+  function renderAuth(view, message, success) {
+    view = view || 'login';
+    var content = '';
+    if (view === 'register') {
+      content = '<div class="auth-panel-header"><h2>Vytvořit účet</h2><p>Vyplň údaje stejně jako v předchozí verzi.</p></div>' +
+        '<form class="auth-form" data-auth-form="register">' +
+          '<div class="field-row"><label class="field">Jméno<input name="first_name" maxlength="50" autocomplete="given-name" required></label><label class="field">Příjmení<input name="last_name" maxlength="50" autocomplete="family-name" required></label></div>' +
+          '<label class="field">Prostřední jméno <span class="optional">volitelné</span><input name="middle_name" maxlength="50" autocomplete="additional-name"></label>' +
+          '<div class="field-row"><label class="field">Telefon <span class="optional">volitelné</span><input name="phone" type="tel" maxlength="30" autocomplete="tel" placeholder="+420 123 456 789"></label><label class="field">Datum narození<input name="birth_date" type="date" autocomplete="bday" required></label></div>' +
+          '<label class="field">E-mail<input name="email" type="email" autocomplete="email" placeholder="tvuj@email.cz" required></label>' +
+          passwordField('password', 'Heslo', 'new-password', 'Minimálně 8 znaků') +
+          passwordField('password2', 'Potvrzení hesla', 'new-password', 'Zopakuj heslo') +
+          authMessageHtml(message, success) +
+          '<button class="primary-button auth-submit" type="submit">Vytvořit účet</button>' +
+        '</form><p class="auth-switch">Už účet máš? <button type="button" data-action="auth-view" data-auth-view="login">Přihlásit se</button></p>';
+    } else if (view === 'forgot') {
+      content = '<div class="auth-panel-header"><h2>Obnovit heslo</h2><p>Pošleme ti e-mail s odkazem pro nastavení nového hesla.</p></div>' +
+        '<form class="auth-form" data-auth-form="forgot"><label class="field">E-mail<input name="email" type="email" autocomplete="email" placeholder="tvuj@email.cz" required></label>' +
+        authMessageHtml(message, success) + '<button class="primary-button auth-submit" type="submit">Poslat odkaz</button></form>' +
+        '<p class="auth-switch"><button type="button" data-action="auth-view" data-auth-view="login">← Zpět na přihlášení</button></p>';
+    } else if (view === 'new-password') {
+      content = '<div class="auth-panel-header"><h2>Nastavit nové heslo</h2><p>Zadej nové heslo, které bude mít alespoň 8 znaků.</p></div>' +
+        '<form class="auth-form" data-auth-form="new-password">' + passwordField('password', 'Nové heslo', 'new-password', 'Minimálně 8 znaků') +
+        passwordField('password2', 'Potvrzení hesla', 'new-password', 'Zopakuj nové heslo') + authMessageHtml(message, success) +
+        '<button class="primary-button auth-submit" type="submit">Uložit nové heslo</button></form>';
+    } else {
+      content = '<div class="auth-panel-header"><h2>Vítej zpátky</h2><p>Přihlas se ke svému účtu Rozvrh+.</p></div>' +
+        '<form class="auth-form" data-auth-form="login"><label class="field">E-mail<input name="email" type="email" autocomplete="email" placeholder="tvuj@email.cz" required></label>' +
+        passwordField('password', 'Heslo', 'current-password', 'Tvoje heslo') +
+        '<div class="auth-forgot"><button class="auth-link" type="button" data-action="auth-view" data-auth-view="forgot">Zapomenuté heslo?</button></div>' +
+        authMessageHtml(message, success) + '<button class="primary-button auth-submit" type="submit">Přihlásit se</button></form>' +
+        '<p class="auth-switch">Nemáš účet? <button type="button" data-action="auth-view" data-auth-view="register">Vytvořit účet</button></p>';
+    }
+    appRoot.hidden = true;
+    authRoot.hidden = false;
+    authRoot.innerHTML = '<section class="auth-shell">' + authAside() + '<div class="auth-panel">' + content + '<p class="auth-note">Přihlášení bezpečně zpracovává Supabase. Heslo se v aplikaci ani v tomto zařízení neukládá.</p></div></section>';
+    document.title = (view === 'register' ? 'Registrace' : view === 'forgot' ? 'Obnova hesla' : 'Přihlášení') + ' · Rozvrh+';
+  }
+
+  async function handleAuthSubmit(form) {
+    var button = form.querySelector('[type="submit"]');
+    var original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Pracuji…';
+    var data = new FormData(form);
+    var type = form.dataset.authForm;
+    try {
+      if (type === 'login') {
+        var loginData = await authRequest('/auth/v1/token?grant_type=password', {
+          method: 'POST',
+          body: { email: String(data.get('email')).trim().toLowerCase(), password: String(data.get('password')) }
+        });
+        var loginSession = normalizeSession(loginData);
+        saveAuthSession(loginSession);
+        await enterApp(loginSession.user || await fetchAuthUser(loginSession));
+      } else if (type === 'register') {
+        var password = String(data.get('password'));
+        if (password.length < 8) throw new Error('weak_password');
+        if (password !== String(data.get('password2'))) throw new Error('password_mismatch');
+        var registerData = await authRequest('/auth/v1/signup?redirect_to=' + encodeURIComponent(location.origin + '/'), {
+          method: 'POST',
+          body: {
+            email: String(data.get('email')).trim().toLowerCase(),
+            password: password,
+            data: {
+              first_name: String(data.get('first_name')).trim(),
+              last_name: String(data.get('last_name')).trim(),
+              middle_name: String(data.get('middle_name')).trim() || null,
+              phone: String(data.get('phone')).trim() || null,
+              birth_date: String(data.get('birth_date'))
+            }
+          }
+        });
+        if (registerData.access_token) {
+          var registerSession = normalizeSession(registerData);
+          saveAuthSession(registerSession);
+          await enterApp(registerSession.user || await fetchAuthUser(registerSession));
+        } else {
+          renderAuth('login', 'Účet byl vytvořen. Zkontroluj e-mail a potvrď registraci, potom se přihlas.', true);
+        }
+      } else if (type === 'forgot') {
+        await authRequest('/auth/v1/recover?redirect_to=' + encodeURIComponent(location.origin + '/'), {
+          method: 'POST',
+          body: { email: String(data.get('email')).trim().toLowerCase() }
+        });
+        renderAuth('forgot', 'Odkaz pro obnovu hesla byl odeslán. Zkontroluj i složku Spam.', true);
+      } else if (type === 'new-password') {
+        var newPassword = String(data.get('password'));
+        if (newPassword.length < 8) throw new Error('weak_password');
+        if (newPassword !== String(data.get('password2'))) throw new Error('password_mismatch');
+        await authRequest('/auth/v1/user', { method: 'PUT', accessToken: authSession.access_token, body: { password: newPassword } });
+        var recoveredUser = await fetchAuthUser(authSession);
+        await enterApp(recoveredUser);
+        toast('Nové heslo bylo uložené.');
+      }
+    } catch (error) {
+      var custom = error.message === 'password_mismatch' ? 'Hesla se neshodují.' : error.message === 'weak_password' ? 'Heslo musí mít alespoň 8 znaků.' : authErrorMessage(error);
+      renderAuth(type === 'register' ? 'register' : type === 'forgot' ? 'forgot' : type === 'new-password' ? 'new-password' : 'login', custom, false);
+    } finally {
+      if (button && button.isConnected) {
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+  }
+
+  async function enterApp(user) {
+    currentUser = user;
+    var ownedKey = BASE_STORE_KEY + ':' + user.id;
+    var migrationOwner = localStorage.getItem(DATA_MIGRATION_KEY);
+    var oldData = localStorage.getItem(BASE_STORE_KEY);
+    if (!localStorage.getItem(ownedKey) && oldData && !migrationOwner) {
+      localStorage.setItem(ownedKey, oldData);
+      localStorage.setItem(DATA_MIGRATION_KEY, user.id);
+    }
+    STORE_KEY = ownedKey;
+    state = loadState();
+    var meta = user.user_metadata || user.raw_user_meta_data || {};
+    if ((!state.settings.name || state.settings.name === 'Student') && meta.first_name) {
+      state.settings.name = meta.first_name;
+      saveState();
+    }
+    authRoot.hidden = true;
+    appRoot.hidden = false;
+    render();
+    await refreshMaterials();
+    maybeShowInstall();
+  }
+
+  async function logout() {
+    try {
+      if (authSession && authSession.access_token) await authRequest('/auth/v1/logout', { method: 'POST', accessToken: authSession.access_token });
+    } catch (error) {
+      console.warn('Odhlášení na serveru se nepodařilo.', error);
+    }
+    saveAuthSession(null);
+    currentUser = null;
+    STORE_KEY = BASE_STORE_KEY;
+    document.getElementById('install-nudge').hidden = true;
+    closeModal();
+    renderAuth('login', 'Byl jsi bezpečně odhlášen.', true);
+  }
+
+  async function initializeAuth() {
+    var callbackType = consumeAuthCallback();
+    var session = authSession || loadAuthSession();
+    if (!session || !session.access_token) {
+      renderAuth('login');
+      return;
+    }
+    authSession = session;
+    try {
+      if (session.expires_at && session.expires_at <= Math.floor(Date.now() / 1000) + 30) {
+        session = await refreshAuthSession(session);
+      } else {
+        saveAuthSession(session);
+      }
+      if (!session.user) await fetchAuthUser(session);
+      if (callbackType === 'recovery') {
+        renderAuth('new-password');
+        return;
+      }
+      await enterApp(authSession.user);
+    } catch (error) {
+      if (!navigator.onLine && session.user) {
+        await enterApp(session.user);
+        return;
+      }
+      saveAuthSession(null);
+      renderAuth('login', authErrorMessage(error), false);
+    }
+  }
 
   function validView(view) {
     return NAV.some(function (item) { return item.id === view; });
@@ -627,6 +932,8 @@
 
   function renderSettings() {
     var installed = isStandalone();
+    var accountEmail = currentUser && currentUser.email ? currentUser.email : '';
+    var accountName = state.settings.name || 'Student';
     var themeButtons = [['light','Světlý'],['dark','Tmavý'],['system','Automaticky']].map(function (item) {
       return '<button class="segment-button ' + (state.settings.theme === item[0] ? 'active' : '') + '" data-action="set-theme" data-theme="' + item[0] + '">' + item[1] + '</button>';
     }).join('');
@@ -638,6 +945,9 @@
     main.innerHTML = '<section class="view">' +
       toolbar('Nastavení', 'Přizpůsob si Rozvrh+ podle sebe.', '') +
       '<div class="settings-layout">' +
+        '<article class="settings-card"><h2>Účet</h2><p>Přihlášení a heslo bezpečně spravuje Supabase.</p>' +
+          '<div class="account-row"><span class="avatar">' + escapeHtml(accountName.charAt(0).toUpperCase()) + '</span><div><strong>' + escapeHtml(accountName) + '</strong><small>' + escapeHtml(accountEmail) + '</small></div></div>' +
+          '<button class="secondary-button button-small button-full" data-action="logout">Odhlásit se</button></article>' +
         '<article class="settings-card"><h2>Profil</h2><p>Jméno se zobrazuje jen v tomto zařízení.</p>' +
           '<form id="profile-form"><label class="field">Tvoje jméno<input name="name" maxlength="40" value="' + escapeHtml(state.settings.name) + '" placeholder="Např. Péťo"></label><button class="primary-button button-small" type="submit">Uložit jméno</button></form></article>' +
         '<article class="settings-card"><h2>Vzhled</h2><p>Změň režim a hlavní barvu aplikace.</p>' +
@@ -892,10 +1202,14 @@
   async function refreshMaterials() {
     try {
       var db = await openDatabase();
-      ui.materials = await new Promise(function (resolve, reject) {
+      var allMaterials = await new Promise(function (resolve, reject) {
         var request = db.transaction('files', 'readonly').objectStore('files').getAll();
         request.onsuccess = function () { resolve(request.result || []); };
         request.onerror = function () { reject(request.error); };
+      });
+      var migrationOwner = localStorage.getItem(DATA_MIGRATION_KEY);
+      ui.materials = allMaterials.filter(function (file) {
+        return currentUser && (file.ownerId === currentUser.id || (!file.ownerId && migrationOwner === currentUser.id));
       });
       ui.materials.sort(function (a, b) { return b.addedAt.localeCompare(a.addedAt); });
       db.close();
@@ -915,7 +1229,7 @@
         var transaction = db.transaction('files', 'readwrite');
         var store = transaction.objectStore('files');
         files.forEach(function (file) {
-          store.put({ id: id(), name: file.name, type: file.type || 'application/octet-stream', size: file.size, addedAt: new Date().toISOString(), blob: file });
+          store.put({ id: id(), ownerId: currentUser.id, name: file.name, type: file.type || 'application/octet-stream', size: file.size, addedAt: new Date().toISOString(), blob: file });
         });
         transaction.oncomplete = resolve;
         transaction.onerror = function () { reject(transaction.error); };
@@ -936,6 +1250,8 @@
       request.onerror = function () { reject(request.error); };
     });
     db.close();
+    var migrationOwner = localStorage.getItem(DATA_MIGRATION_KEY);
+    if (!currentUser || !result || (result.ownerId !== currentUser.id && !(!result.ownerId && migrationOwner === currentUser.id))) return null;
     return result;
   }
 
@@ -950,6 +1266,8 @@
   }
 
   async function removeMaterial(itemId) {
+    var ownedFile = await getMaterial(itemId);
+    if (!ownedFile) return;
     var db = await openDatabase();
     await new Promise(function (resolve, reject) {
       var request = db.transaction('files', 'readwrite').objectStore('files').delete(itemId);
@@ -964,9 +1282,18 @@
     try {
       var db = await openDatabase();
       await new Promise(function (resolve, reject) {
-        var request = db.transaction('files', 'readwrite').objectStore('files').clear();
-        request.onsuccess = resolve;
+        var transaction = db.transaction('files', 'readwrite');
+        var store = transaction.objectStore('files');
+        var request = store.getAll();
+        request.onsuccess = function () {
+          var migrationOwner = localStorage.getItem(DATA_MIGRATION_KEY);
+          (request.result || []).forEach(function (file) {
+            if (currentUser && (file.ownerId === currentUser.id || (!file.ownerId && migrationOwner === currentUser.id))) store.delete(file.id);
+          });
+        };
         request.onerror = function () { reject(request.error); };
+        transaction.oncomplete = resolve;
+        transaction.onerror = function () { reject(transaction.error); };
       });
       db.close();
       ui.materials = [];
@@ -1017,6 +1344,7 @@
   }
 
   function maybeShowInstall() {
+    if (appRoot.hidden) return;
     if (isStandalone()) return;
     var dismissed = Number(localStorage.getItem(INSTALL_DISMISS_KEY) || 0);
     if (Date.now() - dismissed < 7 * 86400000) return;
@@ -1036,7 +1364,14 @@
     if (!button) return;
     var action = button.dataset.action;
     if (action === 'backdrop-close' && event.target !== button) return;
-    if (action === 'navigate') {
+    if (action === 'auth-view') renderAuth(button.dataset.authView);
+    else if (action === 'toggle-password') {
+      var passwordInput = button.parentElement.querySelector('input');
+      var reveal = passwordInput.type === 'password';
+      passwordInput.type = reveal ? 'text' : 'password';
+      button.textContent = reveal ? 'Skrýt' : 'Ukázat';
+    } else if (action === 'logout') await logout();
+    else if (action === 'navigate') {
       closeModal();
       go(button.dataset.view);
     } else if (action === 'more') openMore();
@@ -1075,7 +1410,10 @@
   });
 
   document.addEventListener('submit', function (event) {
-    if (event.target.matches('[data-editor]')) {
+    if (event.target.matches('[data-auth-form]')) {
+      event.preventDefault();
+      handleAuthSubmit(event.target);
+    } else if (event.target.matches('[data-editor]')) {
       event.preventDefault();
       saveEditor(event.target);
     } else if (event.target.id === 'profile-form') {
@@ -1140,7 +1478,7 @@
 
   window.addEventListener('hashchange', function () {
     var view = location.hash.slice(1);
-    if (validView(view) && view !== ui.view) go(view);
+    if (currentUser && validView(view) && view !== ui.view) go(view);
   });
 
   window.addEventListener('beforeinstallprompt', function (event) {
@@ -1173,8 +1511,6 @@
   }
 
   applyAppearance();
-  render();
-  refreshMaterials();
-  maybeShowInstall();
-  setInterval(function () { if (ui.view === 'domu' && !modalRoot.firstChild) renderHome(); }, 60000);
+  initializeAuth();
+  setInterval(function () { if (!appRoot.hidden && ui.view === 'domu' && !modalRoot.firstChild) renderHome(); }, 60000);
 })();

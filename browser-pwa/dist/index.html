@@ -18,7 +18,10 @@
 </head>
 <body>
   <noscript>Pro používání aplikace Rozvrh+ zapni JavaScript.</noscript>
-  <div id="app">
+  <main id="auth-root" class="auth-root" aria-live="polite">
+    <div class="auth-loading"><span class="loader"></span><p>Ověřuji přihlášení…</p></div>
+  </main>
+  <div id="app" hidden>
     <aside class="sidebar" aria-label="Hlavní navigace">
       <a class="brand" href="#domu" aria-label="Rozvrh+ – domů">
         <span class="brand-mark" aria-hidden="true">R<span>+</span></span>
