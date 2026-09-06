@@ -1395,6 +1395,39 @@ svg {
 .account-row strong { font-size: .82rem; }
 .account-row small { color: var(--muted); font-size: .7rem; overflow-wrap: anywhere; }
 
+.cloud-sync-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-2);
+}
+
+.cloud-sync-status i {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.cloud-sync-status.synced i { background: var(--success); box-shadow: 0 0 0 4px rgba(30,155,104,.12); }
+.cloud-sync-status.syncing i { background: var(--accent); animation: cloud-pulse 1.1s ease-in-out infinite; }
+.cloud-sync-status.offline i { background: var(--warning); }
+.cloud-sync-status.error i { background: var(--danger); }
+.cloud-sync-status strong,
+.cloud-sync-status small { display: block; }
+.cloud-sync-status strong { font-size: .78rem; }
+.cloud-sync-status small { margin-top: 1px; color: var(--muted); font-size: .69rem; }
+.sync-now-button { margin-bottom: 8px; }
+
+@keyframes cloud-pulse {
+  50% { opacity: .42; transform: scale(.82); }
+}
+
 .install-status {
   display: flex;
   align-items: center;

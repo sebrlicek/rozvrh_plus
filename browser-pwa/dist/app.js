@@ -117,6 +117,14 @@
 
   var currentUser = null;
   var authSession = null;
+  var cloudStatus = 'local';
+  var cloudReady = false;
+  var cloudDirty = false;
+  var cloudApplying = false;
+  var cloudSaving = false;
+  var cloudUpdatedAt = '';
+  var cloudSaveTimer = null;
+  var cloudPollTimer = null;
   var state = loadState();
   var main = document.getElementById('main-content');
   var modalRoot = document.getElementById('modal-root');
@@ -227,6 +235,182 @@
     session.user = user;
     saveAuthSession(session);
     return user;
+  }
+
+  async function cloudRequest(path, options, retried) {
+    options = options || {};
+    var headers = Object.assign({
+      apikey: SUPABASE_KEY,
+      Authorization: 'Bearer ' + authSession.access_token,
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    }, options.headers || {});
+    var response;
+    try {
+      response = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
+        method: options.method || 'GET',
+        headers: headers,
+        body: options.body ? JSON.stringify(options.body) : undefined
+      });
+    } catch (error) {
+      throw new Error('network_error');
+    }
+    if (response.status === 401 && !retried && authSession.refresh_token) {
+      await refreshAuthSession(authSession);
+      return cloudRequest(path, options, true);
+    }
+    var text = await response.text();
+    var data = null;
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch (error) { data = { message: text }; }
+    }
+    if (!response.ok) {
+      var cloudError = new Error(data && (data.message || data.hint || data.details) || ('HTTP ' + response.status));
+      cloudError.status = response.status;
+      cloudError.code = data && data.code || '';
+      throw cloudError;
+    }
+    return data;
+  }
+
+  function normalizeCloudState(saved) {
+    var base = defaults();
+    return {
+      version: 2,
+      settings: Object.assign(base.settings, saved && saved.settings || {}),
+      lessons: saved && Array.isArray(saved.lessons) ? saved.lessons : base.lessons,
+      tasks: saved && Array.isArray(saved.tasks) ? saved.tasks : base.tasks,
+      exams: saved && Array.isArray(saved.exams) ? saved.exams : base.exams,
+      notes: saved && Array.isArray(saved.notes) ? saved.notes : base.notes
+    };
+  }
+
+  function cloudStatusInfo() {
+    if (cloudStatus === 'syncing') return { label: 'Synchronizuji…', detail: 'Odesílám změny do cloudu.', className: 'syncing' };
+    if (cloudStatus === 'synced') return { label: 'Cloud je aktuální', detail: 'Data jsou dostupná na všech zařízeních.', className: 'synced' };
+    if (cloudStatus === 'offline') return { label: 'Režim offline', detail: 'Změny se odešlou po připojení.', className: 'offline' };
+    if (cloudStatus === 'setup') return { label: 'Cloud čeká na nastavení', detail: 'V Supabase je potřeba vytvořit tabulku app_state.', className: 'error' };
+    if (cloudStatus === 'error') return { label: 'Cloud se nespojil', detail: 'Lokální kopie zůstala zachovaná.', className: 'error' };
+    return { label: 'Lokální kopie', detail: 'Připravuji cloudovou synchronizaci.', className: '' };
+  }
+
+  function cloudStatusHtml() {
+    var info = cloudStatusInfo();
+    return '<div id="cloud-sync-status" class="cloud-sync-status ' + info.className + '"><i></i><div><strong>' + info.label + '</strong><small>' + info.detail + '</small></div></div>';
+  }
+
+  function updateCloudStatus(status) {
+    cloudStatus = status;
+    var target = document.getElementById('cloud-sync-status');
+    if (target) target.outerHTML = cloudStatusHtml();
+  }
+
+  function isCloudSetupError(error) {
+    return error && (error.code === 'PGRST205' || error.code === '42P01' || String(error.message).toLowerCase().indexOf('app_state') >= 0);
+  }
+
+  function stopCloudSync() {
+    clearTimeout(cloudSaveTimer);
+    clearInterval(cloudPollTimer);
+    cloudSaveTimer = null;
+    cloudPollTimer = null;
+    cloudReady = false;
+    cloudSaving = false;
+  }
+
+  function scheduleCloudSave() {
+    if (!currentUser || !cloudReady || cloudApplying) return;
+    cloudDirty = true;
+    clearTimeout(cloudSaveTimer);
+    if (!navigator.onLine) {
+      updateCloudStatus('offline');
+      return;
+    }
+    updateCloudStatus('syncing');
+    cloudSaveTimer = setTimeout(function () { saveCloudState(); }, 850);
+  }
+
+  async function saveCloudState(force) {
+    if (!currentUser || !cloudReady || cloudSaving || (!cloudDirty && !force)) return;
+    cloudSaving = true;
+    clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = null;
+    cloudDirty = false;
+    updateCloudStatus('syncing');
+    var savedAt = new Date().toISOString();
+    var snapshot = JSON.parse(JSON.stringify(state));
+    try {
+      var result = await cloudRequest('app_state?on_conflict=user_id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+        body: { user_id: currentUser.id, data: snapshot }
+      });
+      cloudUpdatedAt = result && result[0] && result[0].updated_at || savedAt;
+      updateCloudStatus('synced');
+    } catch (error) {
+      cloudDirty = true;
+      if (isCloudSetupError(error)) {
+        cloudReady = false;
+        updateCloudStatus('setup');
+      } else {
+        updateCloudStatus(navigator.onLine ? 'error' : 'offline');
+      }
+      console.warn('Cloudové uložení se nepodařilo.', error);
+    } finally {
+      cloudSaving = false;
+      if (cloudDirty && cloudReady && navigator.onLine) scheduleCloudSave();
+    }
+  }
+
+  async function loadCloudState(initial) {
+    if (!currentUser || !cloudReady || cloudSaving || (cloudDirty && !initial) || !navigator.onLine) return;
+    updateCloudStatus('syncing');
+    try {
+      var rows = await cloudRequest('app_state?user_id=eq.' + encodeURIComponent(currentUser.id) + '&select=data,updated_at&limit=1');
+      var row = rows && rows[0];
+      if (!row) {
+        cloudDirty = true;
+        await saveCloudState(true);
+        return;
+      }
+      var isNewer = !cloudUpdatedAt || new Date(row.updated_at).getTime() > new Date(cloudUpdatedAt).getTime();
+      cloudUpdatedAt = row.updated_at || cloudUpdatedAt;
+      if (isNewer && row.data) {
+        cloudApplying = true;
+        state = normalizeCloudState(row.data);
+        localStorage.setItem(STORE_KEY, JSON.stringify(state));
+        cloudApplying = false;
+        render();
+      }
+      updateCloudStatus('synced');
+    } catch (error) {
+      cloudApplying = false;
+      if (isCloudSetupError(error)) {
+        cloudReady = false;
+        updateCloudStatus('setup');
+      } else {
+        updateCloudStatus(navigator.onLine ? 'error' : 'offline');
+      }
+      console.warn('Cloudové načtení se nepodařilo.', error);
+    }
+  }
+
+  async function startCloudSync() {
+    stopCloudSync();
+    cloudReady = true;
+    cloudDirty = false;
+    cloudUpdatedAt = '';
+    if (!navigator.onLine) {
+      updateCloudStatus('offline');
+      return;
+    }
+    await loadCloudState(true);
+    if (cloudReady) {
+      cloudPollTimer = setInterval(function () {
+        if (!document.hidden) loadCloudState(false);
+      }, 15000);
+    }
   }
 
   function authAside() {
@@ -354,6 +538,7 @@
   }
 
   async function enterApp(user) {
+    stopCloudSync();
     currentUser = user;
     var ownedKey = BASE_STORE_KEY + ':' + user.id;
     var migrationOwner = localStorage.getItem(DATA_MIGRATION_KEY);
@@ -374,9 +559,12 @@
     render();
     await refreshMaterials();
     maybeShowInstall();
+    await startCloudSync();
   }
 
   async function logout() {
+    if (cloudDirty && cloudReady && navigator.onLine) await saveCloudState(true);
+    stopCloudSync();
     try {
       if (authSession && authSession.access_token) await authRequest('/auth/v1/logout', { method: 'POST', accessToken: authSession.access_token });
     } catch (error) {
@@ -463,6 +651,7 @@
     if (next) state = next;
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
+      scheduleCloudSave();
     } catch (error) {
       toast('Změny se nepodařilo uložit.', 'error');
     }
@@ -969,10 +1158,12 @@
     main.innerHTML = '<section class="view">' +
       toolbar('Nastavení', 'Přizpůsob si Rozvrh+ podle sebe.', '') +
       '<div class="settings-layout">' +
-        '<article class="settings-card"><h2>Účet</h2><p>Přihlášení a heslo bezpečně spravuje Supabase.</p>' +
+        '<article class="settings-card"><h2>Účet a cloud</h2><p>Přihlášení a synchronizaci bezpečně spravuje Supabase.</p>' +
           '<div class="account-row"><span class="avatar">' + profilePicture + '</span><div><strong>' + escapeHtml(accountName) + '</strong><small>' + escapeHtml(accountEmail) + '</small></div></div>' +
+          cloudStatusHtml() +
+          '<button class="secondary-button button-small button-full sync-now-button" data-action="sync-now">Synchronizovat nyní</button>' +
           '<button class="secondary-button button-small button-full" data-action="logout">Odhlásit se</button></article>' +
-        '<article class="settings-card"><h2>Profil</h2><p>Jméno a profilovka se zobrazují jen v tomto zařízení.</p>' +
+        '<article class="settings-card"><h2>Profil</h2><p>Jméno a profilovka se synchronizují mezi tvými zařízeními.</p>' +
           '<div class="profile-photo-editor"><span class="profile-photo-preview">' + profilePicture + '</span><div><strong>Profilová fotka</strong><small>Čtvercový výřez vytvoříme automaticky.</small></div></div>' +
           '<div class="profile-photo-actions"><input id="profile-picture-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>' +
           '<button class="secondary-button button-small" type="button" data-action="choose-profile-picture">' + icons.upload + (state.settings.avatar ? 'Změnit fotku' : 'Nahrát fotku') + '</button>' +
@@ -1548,6 +1739,12 @@
       render();
       toast('Profilová fotka byla odstraněná.');
     }
+    else if (action === 'sync-now') {
+      if (!navigator.onLine) updateCloudStatus('offline');
+      else if (!cloudReady) await startCloudSync();
+      else if (cloudDirty) await saveCloudState(true);
+      else await loadCloudState(false);
+    }
     else if (action === 'export-data') exportData();
     else if (action === 'import-data') document.getElementById('import-input').click();
     else if (action === 'export-calendar') exportCalendar();
@@ -1652,6 +1849,21 @@
     closeModal();
     toast('Rozvrh+ je nainstalovaný.');
     if (ui.view === 'nastaveni') renderSettings();
+  });
+
+  window.addEventListener('online', function () {
+    if (!currentUser) return;
+    if (!cloudReady) startCloudSync();
+    else if (cloudDirty) saveCloudState(true);
+    else loadCloudState(false);
+  });
+
+  window.addEventListener('offline', function () {
+    if (currentUser) updateCloudStatus('offline');
+  });
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && currentUser && cloudReady) loadCloudState(false);
   });
 
   window.addEventListener('keydown', function (event) {
