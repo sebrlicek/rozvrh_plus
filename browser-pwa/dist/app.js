@@ -415,7 +415,7 @@
 
   function authAside() {
     return '<aside class="auth-aside">' +
-      '<div class="auth-logo"><span class="brand-mark">R<span>+</span></span><strong>Rozvrh<span>+</span></strong></div>' +
+      '<div class="auth-logo"><img class="brand-logo-image" src="/icons/apple-touch-icon.png" alt="" aria-hidden="true"><strong>Rozvrh<span>+</span></strong></div>' +
       '<div class="auth-promise"><small>TVŮJ ŠKOLNÍ ORGANIZÉR</small><h1>Měj školu pod kontrolou.</h1><p>Rozvrh, úkoly, zkoušky a poznámky na jednom místě.</p></div>' +
       '<div class="auth-points"><span><i>✓</i> Funguje jako aplikace na iPhonu</span><span><i>✓</i> Data jednotlivých účtů jsou oddělená</span><span><i>✓</i> Heslo spravuje zabezpečené přihlášení</span></div>' +
     '</aside>';
@@ -1647,7 +1647,7 @@
     if (ios) {
       var safariTip = /CriOS|FxiOS|EdgiOS/.test(navigator.userAgent) ? '<p class="install-tip">Nejdřív stránku otevři v Safari. V jiném prohlížeči nemusí být volba „Přidat na plochu“ dostupná.</p>' : '';
       modalRoot.innerHTML = '<div class="modal-backdrop" data-action="backdrop-close"><section class="modal install-modal" role="dialog" aria-modal="true" aria-labelledby="install-title" data-modal-panel>' +
-        '<div class="install-hero"><div class="install-app-icon">R<span>+</span></div><h2 id="install-title">Přidej Rozvrh+ na plochu</h2><p>Pokud už ikonu máš, otevři aplikaci z plochy. Prohlížeč neumí spolehlivě zjistit, zda tam ikona existuje.</p></div>' +
+        '<div class="install-hero"><div class="install-app-icon"><img src="/icons/apple-touch-icon.png" alt="" aria-hidden="true"></div><h2 id="install-title">Přidej Rozvrh+ na plochu</h2><p>Pokud už ikonu máš, otevři aplikaci z plochy. Prohlížeč neumí spolehlivě zjistit, zda tam ikona existuje.</p></div>' +
         '<div class="install-steps">' +
           '<div class="install-step"><span class="step-number">1</span><div><strong>Klepni na Sdílet</strong><small>Ikona je dole uprostřed v Safari.</small></div><span class="share-symbol">⇧</span></div>' +
           '<div class="install-step"><span class="step-number">2</span><div><strong>Vyber „Přidat na plochu“</strong><small>Možná bude potřeba nabídku posunout níž.</small></div><span>＋</span></div>' +
