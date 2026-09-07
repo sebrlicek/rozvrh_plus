@@ -98,22 +98,16 @@ svg {
   padding: 0 8px 25px;
 }
 
-.brand-mark {
+.brand-logo-image {
   flex: 0 0 auto;
   width: 44px;
   height: 44px;
-  display: grid;
-  place-items: center;
+  display: block;
   border-radius: 15px;
-  background: linear-gradient(145deg, #fff, #e7e3ff);
-  color: #242044;
-  font-weight: 900;
-  font-size: 1.25rem;
-  letter-spacing: -.06em;
+  object-fit: cover;
   box-shadow: 0 10px 28px rgba(0, 0, 0, .18);
 }
 
-.brand-mark span,
 .brand strong span,
 .mobile-brand strong span { color: #a99dff; }
 
@@ -1239,7 +1233,7 @@ svg {
   gap: 12px;
 }
 
-.auth-logo .brand-mark { box-shadow: 0 14px 35px rgba(30,23,91,.25); }
+.auth-logo .brand-logo-image { box-shadow: 0 14px 35px rgba(30,23,91,.25); }
 .auth-logo strong { font-size: 1.22rem; letter-spacing: -.035em; }
 .auth-logo strong span { color: #d8d3ff; }
 
@@ -1546,16 +1540,13 @@ svg {
 .install-app-icon {
   width: 45px;
   height: 45px;
-  display: grid;
-  place-items: center;
+  display: block;
   border-radius: 13px;
-  background: #fff;
-  color: #262044;
-  font-size: 1.05rem;
-  font-weight: 900;
+  overflow: hidden;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .18);
 }
 
-.install-app-icon span { color: var(--accent); }
+.install-app-icon img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .install-nudge strong { display: block; font-size: .82rem; }
 .install-nudge p { margin: 2px 0 0; color: rgba(255,255,255,.6); font-size: .7rem; }
 .nudge-primary { padding: 9px 11px; border-radius: 11px; background: var(--accent); color: #fff; font-size: .73rem; font-weight: 760; }
@@ -1634,8 +1625,7 @@ body.dark .calendar-day.outside { color: #54596b; }
   .topbar { height: 74px; padding: 10px 17px; }
   .page-heading { display: none; }
   .mobile-brand { display: flex; align-items: center; gap: 9px; }
-  .mobile-brand .brand-mark { width: 38px; height: 38px; border-radius: 12px; background: var(--accent); color: #fff; box-shadow: none; font-size: 1.05rem; }
-  .mobile-brand .brand-mark span { color: #ddd8ff; }
+  .mobile-brand .brand-logo-image { width: 38px; height: 38px; border-radius: 12px; box-shadow: none; }
   .mobile-brand strong { font-size: 1.06rem; letter-spacing: -.03em; }
   .mobile-brand strong span { color: var(--accent); }
   #main-content { padding: 23px 16px calc(103px + env(safe-area-inset-bottom)); }
